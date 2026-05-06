@@ -121,8 +121,7 @@ public class TestEliminateCrossJoins
                                         join(INNER, leftJoinBuilder -> leftJoinBuilder
                                                 .left(tableScan("part"))
                                                 .right(anyTree(tableScan("orders", ImmutableMap.of("O_ORDERKEY", "orderkey"))))))
-                                .right(
-                                        anyTree(tableScan("lineitem", ImmutableMap.of("L_ORDERKEY", "orderkey")))))));
+                                .right(anyTree(tableScan("lineitem", ImmutableMap.of("L_ORDERKEY", "orderkey")))))));
     }
 
     @Test
