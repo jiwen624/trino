@@ -57,14 +57,13 @@ public class ValuesStatsRule
         statsBuilder.setOutputRowCount(node.getRowCount());
 
         try {
+            // The row type is loop-invariant; build it once to avoid O(n^2) reconstruction over the output symbols.
+            RowType rowType = RowType.anonymous(node.getOutputSymbols().stream()
+                    .map(Symbol::type)
+                    .collect(toImmutableList()));
             for (int symbolId = 0; symbolId < node.getOutputSymbols().size(); ++symbolId) {
                 Symbol symbol = node.getOutputSymbols().get(symbolId);
-                List<Object> symbolValues = getSymbolValues(
-                        node,
-                        symbolId,
-                        RowType.anonymous(node.getOutputSymbols().stream()
-                                .map(Symbol::type)
-                                .collect(toImmutableList())));
+                List<Object> symbolValues = getSymbolValues(node, symbolId, rowType);
                 statsBuilder.addSymbolStatistics(symbol, buildSymbolStatistics(symbolValues, symbol.type()));
             }
         }
