@@ -51,6 +51,7 @@ import static io.trino.sql.ir.ComparisonOperator.GREATER_THAN_OR_EQUAL;
 import static io.trino.sql.ir.ComparisonOperator.LESS_THAN;
 import static io.trino.sql.ir.ComparisonOperator.LESS_THAN_OR_EQUAL;
 import static io.trino.sql.ir.IrExpressions.between;
+import static io.trino.sql.ir.IrExpressions.bindIfNecessary;
 import static io.trino.sql.ir.IrExpressions.comparison;
 import static io.trino.sql.ir.IrExpressions.matchComparison;
 import static io.trino.sql.ir.IrExpressions.not;
@@ -91,7 +92,7 @@ public class UnwrapYearInComparison
         return (expression, context) -> unwrapYear(context.getSession(), plannerContext, context.getSymbolAllocator(), expression);
     }
 
-    private static Expression unwrapYear(
+    public static Expression unwrapYear(
             Session session,
             PlannerContext plannerContext,
             SymbolAllocator symbolAllocator,
@@ -218,14 +219,14 @@ public class UnwrapYearInComparison
                         argument,
                         new Constant(argumentType, calculateRangeStartInclusive(year, argumentType)),
                         new Constant(argumentType, calculateRangeEndInclusive(year, argumentType))));
-                case IDENTICAL -> and(
-                        not(metadata, getCharVarcharCoercion(session), new IsNull(argument)),
+                case IDENTICAL -> bindIfNecessary(symbolAllocator, "operand", argument, operand -> and(
+                        not(metadata, getCharVarcharCoercion(session), new IsNull(operand)),
                         between(metadata,
                                 getCharVarcharCoercion(session),
                                 symbolAllocator,
-                                argument,
+                                operand,
                                 new Constant(argumentType, calculateRangeStartInclusive(year, argumentType)),
-                                new Constant(argumentType, calculateRangeEndInclusive(year, argumentType))));
+                                new Constant(argumentType, calculateRangeEndInclusive(year, argumentType)))));
                 case LESS_THAN -> {
                     Object value = calculateRangeStartInclusive(year, argumentType);
                     yield comparison(metadata, getCharVarcharCoercion(session), LESS_THAN, argument, new Constant(argumentType, value));
