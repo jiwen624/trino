@@ -14,13 +14,17 @@
 package io.trino.sql.planner;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.graph.SuccessorsFunction;
+import com.google.common.graph.Traverser;
 import io.trino.metadata.ResolvedFunction;
 import io.trino.metadata.TestingFunctionResolution;
 import io.trino.sql.ir.Call;
+import io.trino.sql.ir.Cast;
 import io.trino.sql.ir.Constant;
 import io.trino.sql.ir.Expression;
 import io.trino.sql.ir.IrExpressions;
 import io.trino.sql.ir.IsNull;
+import io.trino.sql.ir.Let;
 import io.trino.sql.ir.Logical;
 import io.trino.sql.ir.Reference;
 import io.trino.sql.planner.assertions.BasePlanTest;
@@ -28,6 +32,7 @@ import io.trino.type.DateTimes;
 import io.trino.util.DateTimeUtils;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.stream.Stream;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
@@ -38,25 +43,32 @@ import static io.trino.spi.type.BooleanType.BOOLEAN;
 import static io.trino.spi.type.DateType.DATE;
 import static io.trino.spi.type.DoubleType.DOUBLE;
 import static io.trino.spi.type.TimestampType.createTimestampType;
+import static io.trino.spi.type.VarcharType.createVarcharType;
 import static io.trino.sql.analyzer.TypeDescriptorProvider.fromTypes;
 import static io.trino.sql.ir.ComparisonOperator.EQUAL;
 import static io.trino.sql.ir.ComparisonOperator.GREATER_THAN;
 import static io.trino.sql.ir.ComparisonOperator.GREATER_THAN_OR_EQUAL;
+import static io.trino.sql.ir.ComparisonOperator.IDENTICAL;
 import static io.trino.sql.ir.ComparisonOperator.LESS_THAN;
 import static io.trino.sql.ir.ComparisonOperator.LESS_THAN_OR_EQUAL;
 import static io.trino.sql.ir.Logical.Operator.AND;
 import static io.trino.sql.ir.Logical.Operator.OR;
 import static io.trino.sql.ir.TestingIr.comparison;
+import static io.trino.sql.planner.TestingSymbolAllocator.emptySymbolAllocator;
 import static io.trino.sql.planner.assertions.PlanMatchPattern.filter;
 import static io.trino.sql.planner.assertions.PlanMatchPattern.output;
 import static io.trino.sql.planner.assertions.PlanMatchPattern.values;
+import static io.trino.sql.planner.iterative.rule.UnwrapDateTruncInComparison.unwrapDateTrunc;
 import static java.lang.String.format;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class TestUnwrapDateTruncInComparison
         extends BasePlanTest
 {
     private static final TestingFunctionResolution FUNCTIONS = new TestingFunctionResolution();
     private static final ResolvedFunction RANDOM = FUNCTIONS.resolveFunction("random", fromTypes());
+    private static final ResolvedFunction FROM_UNIXTIME = FUNCTIONS.resolveFunction("from_unixtime", fromTypes(DOUBLE));
+    private static final ResolvedFunction DATE_TRUNC_TS3 = FUNCTIONS.resolveFunction("date_trunc", fromTypes(createVarcharType(4), createTimestampType(3)));
 
     @Test
     public void testDateSupportedUnitsEqual()
@@ -256,5 +268,61 @@ public class TestUnwrapDateTruncInComparison
     private static Expression not(Expression value)
     {
         return IrExpressions.not(FUNCTIONS.getMetadata(), getCharVarcharCoercion(TEST_SESSION), value);
+    }
+
+    @Test
+    public void testUnwrapDateTruncBindsNonTrivialOperandOnce()
+    {
+        Expression operand = new Cast(
+                new Call(FROM_UNIXTIME, ImmutableList.of(new Call(RANDOM, ImmutableList.of()))),
+                createTimestampType(3));
+
+        Expression unwrapped = unwrapDateTrunc(
+                TEST_SESSION,
+                FUNCTIONS.getPlannerContext(),
+                emptySymbolAllocator(),
+                comparison(IDENTICAL, new Call(DATE_TRUNC_TS3, ImmutableList.of(new Constant(createVarcharType(4), utf8Slice("year")), operand)), timestampConstant(3, "2021-01-01 00:00:00.000")));
+
+        List<Let> bindings = letsBinding(unwrapped, operand);
+        assertThat(bindings).hasSize(1);
+        assertThat(occurrences(bindings.getFirst().body(), operand)).isEqualTo(0);
+        assertThat(occurrences(unwrapped, operand)).isEqualTo(1);
+    }
+
+    @Test
+    public void testUnwrapDateTruncKeepsTrivialOperandInline()
+    {
+        Reference operand = new Reference(createTimestampType(3), "a");
+
+        Expression unwrapped = unwrapDateTrunc(
+                TEST_SESSION,
+                FUNCTIONS.getPlannerContext(),
+                emptySymbolAllocator(),
+                comparison(IDENTICAL, new Call(DATE_TRUNC_TS3, ImmutableList.of(new Constant(createVarcharType(4), utf8Slice("year")), operand)), timestampConstant(3, "2021-01-01 00:00:00.000")));
+
+        assertThat(unwrapped).isNotInstanceOf(Let.class);
+        assertThat(occurrences(unwrapped, operand)).isGreaterThanOrEqualTo(2);
+    }
+
+    private static List<Let> letsBinding(Expression tree, Expression operand)
+    {
+        ImmutableList.Builder<Let> bindings = ImmutableList.builder();
+        for (Expression node : Traverser.forTree((SuccessorsFunction<Expression>) Expression::children).depthFirstPreOrder(tree)) {
+            if (node instanceof Let let && let.value().equals(operand)) {
+                bindings.add(let);
+            }
+        }
+        return bindings.build();
+    }
+
+    private static int occurrences(Expression tree, Expression target)
+    {
+        int count = 0;
+        for (Expression node : Traverser.forTree((SuccessorsFunction<Expression>) Expression::children).depthFirstPreOrder(tree)) {
+            if (node.equals(target)) {
+                count++;
+            }
+        }
+        return count;
     }
 }

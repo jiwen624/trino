@@ -64,6 +64,7 @@ import static io.trino.sql.ir.ComparisonOperator.GREATER_THAN_OR_EQUAL;
 import static io.trino.sql.ir.ComparisonOperator.LESS_THAN;
 import static io.trino.sql.ir.ComparisonOperator.LESS_THAN_OR_EQUAL;
 import static io.trino.sql.ir.IrExpressions.between;
+import static io.trino.sql.ir.IrExpressions.bindIfNecessary;
 import static io.trino.sql.ir.IrExpressions.comparison;
 import static io.trino.sql.ir.IrExpressions.matchComparison;
 import static io.trino.sql.ir.IrExpressions.not;
@@ -109,7 +110,7 @@ public class UnwrapDateTruncInComparison
         return (expression, context) -> unwrapDateTrunc(context.getSession(), plannerContext, context.getSymbolAllocator(), expression);
     }
 
-    private static Expression unwrapDateTrunc(
+    public static Expression unwrapDateTrunc(
             Session session,
             PlannerContext plannerContext,
             SymbolAllocator symbolAllocator,
@@ -247,14 +248,14 @@ public class UnwrapDateTruncInComparison
                     if (!rightValueAtRangeLow) {
                         yield FALSE;
                     }
-                    yield and(
-                            not(plannerContext.getMetadata(), getCharVarcharCoercion(session), new IsNull(argument)),
+                    yield bindIfNecessary(symbolAllocator, "operand", argument, operand -> and(
+                            not(plannerContext.getMetadata(), getCharVarcharCoercion(session), new IsNull(operand)),
                             between(plannerContext.getMetadata(),
                                     getCharVarcharCoercion(session),
                                     symbolAllocator,
-                                    argument,
+                                    operand,
                                     new Constant(rightType, rangeLow),
-                                    new Constant(rightType, calculateRangeEndInclusive(rangeLow, rightType, unit))));
+                                    new Constant(rightType, calculateRangeEndInclusive(rangeLow, rightType, unit)))));
                 }
                 case LESS_THAN -> {
                     if (rightValueAtRangeLow) {
