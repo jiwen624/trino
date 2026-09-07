@@ -14,11 +14,13 @@
 package io.trino.execution;
 
 import com.google.common.collect.ImmutableMap;
+import io.trino.sql.tree.CreateMaterializedView;
 import io.trino.sql.tree.DefaultTraversalVisitor;
 import io.trino.sql.tree.Expression;
 import io.trino.sql.tree.NodeLocation;
 import io.trino.sql.tree.NodeRef;
 import io.trino.sql.tree.Parameter;
+import io.trino.sql.tree.Property;
 import io.trino.sql.tree.Statement;
 
 import java.util.ArrayList;
@@ -76,6 +78,15 @@ public final class ParameterExtractor
         public Void visitParameter(Parameter node, Void context)
         {
             parameters.add(node);
+            return null;
+        }
+
+        @Override
+        protected Void visitCreateMaterializedView(CreateMaterializedView node, Void context)
+        {
+            for (Property property : node.getProperties()) {
+                process(property, context);
+            }
             return null;
         }
     }
