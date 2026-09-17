@@ -44,7 +44,7 @@ public class ResourceGroupStateInfoResource
     @Produces(MediaType.APPLICATION_JSON)
     @Encoded
     @Path("{resourceGroupId: .+}")
-    public ResourceGroupInfo getQueryStateInfos(@PathParam("resourceGroupId") ResourceGroupId resourceGroupId)
+    public ResourceGroupInfo getResourceGroupInfo(@PathParam("resourceGroupId") ResourceGroupId resourceGroupId)
     {
         if (resourceGroupId == null) {
             throw new NotFoundException();
