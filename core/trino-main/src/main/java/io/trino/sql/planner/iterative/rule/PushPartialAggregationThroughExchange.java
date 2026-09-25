@@ -150,7 +150,12 @@ public class PushPartialAggregationThroughExchange
             return Optional.of(split(aggregationNode, context));
         }
 
-        if (!decomposable || !preferPartialAggregation(context.getSession())) {
+        if (!decomposable) {
+            return Optional.empty();
+        }
+
+        boolean producesDefaultIntermediates = aggregationNode.getStep() == PARTIAL && aggregationNode.hasEmptyGroupingSet();
+        if (!preferPartialAggregation(context.getSession()) && !producesDefaultIntermediates) {
             return Optional.empty();
         }
 

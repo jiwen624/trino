@@ -15,6 +15,7 @@ package io.trino.sql.planner.iterative.rule;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import io.trino.metadata.ResolvedFunction;
 import io.trino.metadata.TestingFunctionResolution;
 import io.trino.spi.function.OperatorType;
@@ -40,6 +41,7 @@ import static io.trino.sql.planner.assertions.PlanMatchPattern.project;
 import static io.trino.sql.planner.assertions.PlanMatchPattern.singleGroupingSet;
 import static io.trino.sql.planner.assertions.PlanMatchPattern.values;
 import static io.trino.sql.planner.plan.AggregationNode.Step.PARTIAL;
+import static io.trino.sql.planner.plan.AggregationNode.groupingSets;
 import static io.trino.sql.planner.plan.ExchangeNode.Type.REPARTITION;
 
 public class TestPushPartialAggregationThroughExchange
@@ -200,5 +202,34 @@ public class TestPushPartialAggregationThroughExchange
                                             .fixedHashDistributionPartitioningScheme(ImmutableList.of(a, b), ImmutableList.of(a))))));
                 })
                 .doesNotFire();
+    }
+
+    @Test
+    public void testPushesPartialAggregationWithEmptyGroupingSetWhenPreferPartialAggregationDisabled()
+    {
+        tester().assertThat(new PushPartialAggregationThroughExchange(tester().getPlannerContext())
+                        .pushPartialAggregationThroughExchangeWithoutProjection())
+                .setSystemProperty(PREFER_PARTIAL_AGGREGATION, "false")
+                .on(p -> {
+                    Symbol a = p.symbol("a", INTEGER);
+                    Symbol b = p.symbol("b", INTEGER);
+                    Symbol count = p.symbol("count", BIGINT);
+                    return p.aggregation(aggregationBuilder -> aggregationBuilder
+                            .groupingSets(groupingSets(ImmutableList.of(a), 2, ImmutableSet.of(1)))
+                            .step(PARTIAL)
+                            .addAggregation(count, PlanBuilder.aggregation("count", ImmutableList.of(new Reference(INTEGER, "b"))), ImmutableList.of(INTEGER))
+                            .source(p.exchange(e -> e
+                                    .type(REPARTITION)
+                                    .addSource(p.values(a, b))
+                                    .addInputsSet(a, b)
+                                    .fixedHashDistributionPartitioningScheme(ImmutableList.of(a, b), ImmutableList.of(a)))));
+                })
+                .matches(
+                        exchange(
+                                project(
+                                        aggregation(
+                                                ImmutableMap.of("count", aggregationFunction("count", ImmutableList.of("b"))),
+                                                PARTIAL,
+                                                values("a", "b")))));
     }
 }

@@ -13,11 +13,13 @@
  */
 package io.trino.sql.query;
 
+import io.trino.Session;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.parallel.Execution;
 
+import static io.trino.SystemSessionProperties.PREFER_PARTIAL_AGGREGATION;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.TestInstance.Lifecycle.PER_CLASS;
 import static org.junit.jupiter.api.parallel.ExecutionMode.CONCURRENT;
@@ -122,5 +124,22 @@ public class TestGroupingSets
                          (   1, NULL, NULL, 3),
                          (   1,    2,    2, 2)
                         """);
+    }
+
+    @Test
+    public void testEmptyGroupingSetWithoutPreferPartialAggregation()
+    {
+        Session session = Session.builder(assertions.getDefaultSession())
+                .setSystemProperty(PREFER_PARTIAL_AGGREGATION, "false")
+                .build();
+
+        assertThat(assertions.query(session, "SELECT a, count(*) FROM (VALUES 1, 2) t(a) GROUP BY ROLLUP (a)"))
+                .matches("VALUES (1, BIGINT '1'), (2, BIGINT '1'), (NULL, BIGINT '2')");
+
+        assertThat(assertions.query(session, "SELECT a, b, count(*) FROM (VALUES (1, 1), (1, 2)) t(a, b) GROUP BY CUBE (a, b)"))
+                .matches("VALUES (1, 1, BIGINT '1'), (1, 2, BIGINT '1'), (1, NULL, BIGINT '2'), (NULL, 1, BIGINT '1'), (NULL, 2, BIGINT '1'), (NULL, NULL, BIGINT '2')");
+
+        assertThat(assertions.query(session, "SELECT a, count(*) FROM (VALUES 1, 2) t(a) WHERE a > 5 GROUP BY GROUPING SETS ((a), ())"))
+                .matches("VALUES (CAST(NULL AS integer), BIGINT '0')");
     }
 }
