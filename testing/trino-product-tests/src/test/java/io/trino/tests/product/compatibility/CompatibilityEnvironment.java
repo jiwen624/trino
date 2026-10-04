@@ -264,7 +264,7 @@ public class CompatibilityEnvironment
         while (System.currentTimeMillis() < deadline) {
             try (Connection connection = createCompatibilityTrinoConnection();
                     Statement statement = connection.createStatement();
-                    ResultSet resultSet = statement.executeQuery("SELECT 1")) {
+                    ResultSet resultSet = statement.executeQuery("SELECT count(*) FROM tpch.tiny.nation")) {
                 if (resultSet.next()) {
                     return;
                 }
