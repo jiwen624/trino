@@ -1573,6 +1573,19 @@ public class TestSubqueries
     }
 
     @Test
+    public void testQuantifiedEqualityWithNullValueAndDistinctElements()
+    {
+        assertThat(assertions.query("SELECT CAST(NULL AS integer) = ALL (VALUES 1, 2)"))
+                .matches("VALUES CAST(NULL AS boolean)");
+
+        assertThat(assertions.query("SELECT CAST(NULL AS integer) <> ANY (VALUES 1, 2)"))
+                .matches("VALUES CAST(NULL AS boolean)");
+
+        assertThat(assertions.query("SELECT k FROM (VALUES 1, 2, NULL) t(k) WHERE k <> ANY (VALUES 1, 2)"))
+                .matches("VALUES 1, 2");
+    }
+
+    @Test
     public void testInPredicate()
     {
         assertThat(assertions.query(

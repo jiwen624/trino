@@ -214,9 +214,9 @@ public class TransformQuantifiedComparisonApplyToCorrelatedJoin
         private Expression getBoundComparisons(ApplyNode.QuantifiedComparison quantifiedComparison, Symbol minValue, Symbol maxValue)
         {
             if (mapOperator(quantifiedComparison) == EQUAL && quantifiedComparison.quantifier() == ALL) {
-                // A = ALL B <=> min B = max B && A = min B
+                // A = ALL B <=> A = min B && A = max B
                 return combineConjuncts(
-                        comparison(metadata, getCharVarcharCoercion(session), EQUAL, minValue.toSymbolReference(), maxValue.toSymbolReference()),
+                        comparison(metadata, getCharVarcharCoercion(session), EQUAL, quantifiedComparison.value().toSymbolReference(), minValue.toSymbolReference()),
                         comparison(metadata, getCharVarcharCoercion(session), EQUAL, quantifiedComparison.value().toSymbolReference(), maxValue.toSymbolReference()));
             }
 
