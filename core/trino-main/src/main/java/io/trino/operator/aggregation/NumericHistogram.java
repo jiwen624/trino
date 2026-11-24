@@ -19,6 +19,7 @@ import io.airlift.slice.Slice;
 import io.airlift.slice.SliceInput;
 import io.airlift.slice.Slices;
 import it.unimi.dsi.fastutil.Arrays;
+import it.unimi.dsi.fastutil.doubles.DoubleArrays;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -28,16 +29,20 @@ import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static io.airlift.slice.SizeOf.instanceSize;
+import static java.lang.Math.max;
+import static java.lang.Math.min;
 import static java.util.Objects.requireNonNull;
 
 public class NumericHistogram
 {
     private static final byte FORMAT_TAG = 0;
     private static final int INSTANCE_SIZE = instanceSize(NumericHistogram.class);
+    private static final int INITIAL_CAPACITY = 16;
 
     private final int maxBuckets;
-    private final double[] values;
-    private final double[] weights;
+    private final int capacity;
+    private double[] values;
+    private double[] weights;
 
     private int nextIndex;
 
@@ -52,8 +57,9 @@ public class NumericHistogram
         checkArgument(buffer >= 1, "buffer must be >= 1");
 
         this.maxBuckets = maxBuckets;
-        this.values = new double[maxBuckets + buffer];
-        this.weights = new double[maxBuckets + buffer];
+        this.capacity = maxBuckets + buffer;
+        this.values = new double[0];
+        this.weights = new double[0];
     }
 
     public NumericHistogram(Slice serialized, int buffer)
@@ -66,9 +72,10 @@ public class NumericHistogram
         checkArgument(input.readByte() == FORMAT_TAG, "Unsupported format tag");
 
         maxBuckets = input.readInt();
+        capacity = maxBuckets + buffer;
         nextIndex = input.readInt();
-        values = new double[maxBuckets + buffer];
-        weights = new double[maxBuckets + buffer];
+        values = new double[nextIndex];
+        weights = new double[nextIndex];
 
         input.readDoubles(values, 0, nextIndex);
         input.readDoubles(weights, 0, nextIndex);
@@ -107,7 +114,12 @@ public class NumericHistogram
     public void add(double value, double weight)
     {
         if (nextIndex == values.length) {
-            compact();
+            if (values.length < capacity) {
+                ensureCapacity(nextIndex + 1);
+            }
+            else {
+                compact();
+            }
         }
 
         values[nextIndex] = value;
@@ -129,6 +141,7 @@ public class NumericHistogram
         count = mergeSameBuckets(newValues, newWeights, count);
 
         if (count <= maxBuckets) {
+            ensureCapacity(count);
             // copy back into this.values/this.weights
             System.arraycopy(newValues, 0, this.values, 0, count);
             System.arraycopy(newWeights, 0, this.weights, 0, count);
@@ -218,6 +231,7 @@ public class NumericHistogram
      */
     private void store(PriorityQueue<Entry> queue)
     {
+        ensureCapacity(maxBuckets);
         nextIndex = 0;
         for (Entry entry : queue) {
             if (entry.isValid()) {
@@ -227,6 +241,16 @@ public class NumericHistogram
             }
         }
         sort(values, weights, nextIndex);
+    }
+
+    private void ensureCapacity(int minLength)
+    {
+        if (values.length >= minLength) {
+            return;
+        }
+        int newLength = min(capacity, max(minLength, max(INITIAL_CAPACITY, values.length * 2)));
+        values = DoubleArrays.forceCapacity(values, newLength, values.length);
+        weights = DoubleArrays.forceCapacity(weights, newLength, weights.length);
     }
 
     /**

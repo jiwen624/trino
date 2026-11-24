@@ -99,6 +99,17 @@ public class TestNumericHistogram
     }
 
     @Test
+    public void testSizeTracksEntriesNotMaxBuckets()
+    {
+        NumericHistogram histogram = new NumericHistogram(1_000_000, 100);
+        histogram.add(1.0);
+        assertThat(histogram.estimatedInMemorySize()).isLessThan(1_000);
+
+        NumericHistogram deserialized = new NumericHistogram(histogram.serialize(), 100);
+        assertThat(deserialized.estimatedInMemorySize()).isLessThan(1_000);
+    }
+
+    @Test
     public void testMergeSame()
     {
         NumericHistogram histogram = new NumericHistogram(10, 3);
